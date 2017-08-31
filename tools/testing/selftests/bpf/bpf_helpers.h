@@ -70,7 +70,10 @@ static int (*bpf_sk_redirect_map)(void *map, int key, int flags) =
 static int (*bpf_sock_map_update)(void *map, void *key, void *value,
 				  unsigned long long flags) =
 	(void *) BPF_FUNC_sock_map_update;
-
+static int (*bpf_skb_ct_lookup)(void *ctx, void *ct, int flags) =
+	(void *) BPF_FUNC_skb_ct_lookup;
+static int (*bpf_skb_ct_commit)(void *ctx, void *ct, int flags) =
+	(void *) BPF_FUNC_skb_ct_commit;
 
 /* llvm builtin functions that eBPF C program may use to
  * emit BPF_LD_ABS and BPF_LD_IND instructions
