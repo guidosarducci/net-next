@@ -24,6 +24,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <linux/if_ether.h>
+#define __sum16 u16
 #include <linux/ip.h>
 #include <stddef.h>
 #include "libbpf.h"
