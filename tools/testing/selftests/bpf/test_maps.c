@@ -27,6 +27,109 @@
 
 static int map_flags;
 
+struct wckey {
+       long long ukey; /* u: unmasked key */
+       long long mask;
+};
+
+static void test_wcmap(int task, void *data)
+{
+       struct wckey wckey;
+       long long value;
+       int fd;
+
+       fd = bpf_create_map(BPF_MAP_TYPE_WCMAP, sizeof(wckey), sizeof(value), 2, map_flags);
+       if (fd < 0) {
+	       printf("Failed to create hashmap '%s'!\n", strerror(errno));
+	       exit(1);
+       }
+
+       wckey.ukey = 0x11111111;
+       wckey.mask = 0xffff0000;
+       value = 1234;
+       /* Insert key=1 element. */
+       assert(bpf_map_update_elem(fd, &wckey, &value, BPF_ANY) == 0);
+
+       value = 0;
+       /* BPF_NOEXIST means add new element if it doesn't exist. */
+       assert(bpf_map_update_elem(fd, &wckey, &value, BPF_NOEXIST) == -1 &&
+	      /* key=1 already exists. */
+	      errno == EEXIST);
+
+       /* Check that key=1 can be found. */
+       assert(bpf_map_lookup_elem(fd, &wckey, &value) == 0 && value == 1234);
+
+       wckey.ukey = 0x22222222;
+       wckey.mask = 0x00ff00ff;
+       /* Check that key=2 is not found. */
+       assert(bpf_map_lookup_elem(fd, &wckey, &value) == -1 && errno == ENOENT);
+
+       /* BPF_EXIST means update existing element. */
+       assert(bpf_map_update_elem(fd, &wckey, &value, BPF_EXIST) == -1 &&
+	      /* key=2 is not there. */
+	      errno == ENOENT);
+
+       /* Insert key=2 element. */
+       assert(bpf_map_update_elem(fd, &wckey, &value, BPF_NOEXIST) == 0);
+
+       /* key=1 and key=2 were inserted, check that key=0 cannot be
+	* inserted due to max_entries limit.
+	*/
+       wckey.ukey = 0;
+       wckey.mask = 0xffffffff;
+       assert(bpf_map_update_elem(fd, &wckey, &value, BPF_NOEXIST) == -1 &&
+	      errno == E2BIG);
+
+       /* Update existing element, though the map is full. */
+       wckey.ukey = 0x11111111;
+       wckey.mask = 0xffff0000;
+       assert(bpf_map_update_elem(fd, &wckey, &value, BPF_EXIST) == 0);
+
+       wckey.ukey = 0x22222222;
+       wckey.mask = 0x00ff00ff;
+       assert(bpf_map_update_elem(fd, &wckey, &value, BPF_ANY) == 0);
+
+       /* basic wildcard testing, table has 2 entries: {key, mask}
+	*    1: {0x11111111, 0xffff0000}
+	*    2: {0x22222222, 0x00ff00ff}
+	*/
+       wckey.ukey = 0x11119999; /* 9999 will be masked out, hit entry 1 */
+       assert(bpf_map_lookup_elem(fd, &wckey, &value) == 0);
+       wckey.ukey = 0x11188888; /* only lower 8888 masked out, no match */
+       assert(bpf_map_lookup_elem(fd, &wckey, &value) == -1 && errno == ENOENT);
+
+       /* basic wildcard testing */
+       wckey.ukey = 0x00227722; /* 77 will be masked out, hit enrty 2 */
+       assert(bpf_map_lookup_elem(fd, &wckey, &value) == 0);
+       wckey.ukey = 0x77229921; /* 77,99 will be masked out, resulting 0x00220021 */
+       assert(bpf_map_lookup_elem(fd, &wckey, &value) == -1 && errno == ENOENT);
+
+       /* Overlapping masked looup, delete entry 2 */
+       wckey.ukey = 0x22222222;
+       wckey.mask = 0x00ff00ff;
+       assert(bpf_map_delete_elem(fd, &wckey) == 0);
+
+       /* Insert overlapping masks: 0xffff0000 and 0x00ffff00 */
+       value = 4321;
+       wckey.ukey = 0x11111111;
+       wckey.mask = 0x00ffff00;
+       assert(bpf_map_update_elem(fd, &wckey, &value, BPF_NOEXIST) == 0);
+
+       /* Now table has:
+	*    1: {0x11111111, 0xffff0000}
+	*    2: {0x11111111, 0x00ffff00}
+	*/
+       /* match both keys: unknown behavior */
+       wckey.ukey = 0x11111111;
+       assert(bpf_map_lookup_elem(fd, &wckey, &value) == 0);
+
+       wckey.ukey = 0x11131111;
+       assert(bpf_map_lookup_elem(fd, &wckey, &value) == -1 && errno == ENOENT);
+
+       printf("pass wc map\n");
+       return;
+}
+
 static void test_hashmap(int task, void *data)
 {
 	long long key, next_key, first_key, value;
@@ -921,6 +1024,7 @@ static void run_all_tests(void)
 	test_hashmap(0, NULL);
 	test_hashmap_percpu(0, NULL);
 	test_hashmap_walk(0, NULL);
+       test_wcmap(0, NULL);
 
 	test_arraymap(0, NULL);
 	test_arraymap_percpu(0, NULL);

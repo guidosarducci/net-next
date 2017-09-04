@@ -1359,3 +1359,95 @@ const struct bpf_map_ops htab_of_maps_map_ops = {
 	.map_fd_sys_lookup_elem = bpf_map_fd_sys_lookup_elem,
 	.map_gen_lookup = htab_of_map_gen_lookup,
 };
+
+static void wctab_do_mask_key(void *dst, const void *src, const void *mask, int len)
+{
+	const char *m = (const u8 *)mask;
+	const char *s = (const u8 *)src;
+	char *d = (u8 *)dst;
+	int i;
+
+	for (i = 0; i < len; i ++)
+		*d++ = *s++ & *m++;
+}
+
+static bool wctab_do_mask_and_cmp(const void *key, const void *masked_key,
+				 const void *mask, int len)
+{
+       const char *s = (const u8 *)masked_key;
+       const char *m = (const u8 *)mask;
+       const char *k = (const u8 *)key;
+       int i;
+
+       /* byte-by-byte comparison is inefficient. optimize later? */
+       for (i = 0; i < len; i++)
+	       if ((*s++) != (*k++ & *m++))
+		       return false;
+       return true;
+}
+
+static void *wctab_map_lookup_elem(struct bpf_map *map, void *key)
+{
+       struct bpf_htab *htab = container_of(map, struct bpf_htab, map);
+       const int key_size = map->key_size;
+       int i;
+
+       /* iterate over all buckets and all element, thus O(n)
+	* for each element:
+	*   extract its mask at second half
+	*   apply the mask to the lookup key
+	*   compared the masked key and the elem's key
+	*/
+       for (i = 0; i < htab->n_buckets; i++) {
+	       struct hlist_nulls_head *head = select_bucket(htab, i);
+	       struct hlist_nulls_node *n;
+	       struct htab_elem *l;
+
+	       hlist_nulls_for_each_entry_safe(l, n, head, hash_node) {
+		       const void *masked_key = l->key;
+		       const void *mask = l->key + map->key_size;
+
+		       masked_key = l->key;
+		       mask = l->key + key_size / 2;
+		       if (wctab_do_mask_and_cmp(key, masked_key, mask, key_size / 2))
+			       return l->key + round_up(key_size, 8);
+	       }
+       }
+       return NULL;
+}
+
+static int wctab_map_update_elem(struct bpf_map *map, void *key, void *value,
+				u64 map_flags)
+{
+       int key_size = map->key_size;
+       void *mask = (u8 *)key + key_size / 2;
+
+       wctab_do_mask_key(key, key, mask, key_size / 2);
+       return htab_map_update_elem(map, key, value, map_flags);
+}
+
+static int wctab_map_delete_elem(struct bpf_map *map, void *key)
+{
+       int key_size = map->key_size;
+       void *mask = (u8 *)key + key_size / 2;
+
+       wctab_do_mask_key(key, key, mask, key_size / 2);
+       return htab_map_delete_elem(map, key);
+}
+
+static struct bpf_map *wctab_map_alloc(union bpf_attr *attr)
+{
+       // need some sanity checks? alignment?
+       printk("wc map key_size %d value size %d\n",
+	       attr->key_size, attr->value_size);
+       return htab_map_alloc(attr);
+}
+
+const struct bpf_map_ops wctab_map_ops = {
+       .map_alloc = wctab_map_alloc,
+       .map_free = htab_map_free,
+       .map_get_next_key = htab_map_get_next_key,
+       .map_lookup_elem = wctab_map_lookup_elem,
+       .map_update_elem = wctab_map_update_elem,
+       .map_delete_elem = wctab_map_delete_elem,
+};

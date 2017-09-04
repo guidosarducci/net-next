@@ -88,6 +88,19 @@ struct bpf_map_def SEC("maps") array_map = {
 	.max_entries = MAX_ENTRIES,
 };
 
+struct wckey {
+       long ukey;
+       long mask;
+};
+
+struct bpf_map_def SEC("maps") wc_map = {
+       .type = BPF_MAP_TYPE_WCMAP,
+       .key_size = sizeof(struct wckey),
+       .value_size = sizeof(long),
+       .max_entries = MAX_ENTRIES,
+};
+
+
 SEC("kprobe/sys_getuid")
 int stress_hmap(struct pt_regs *ctx)
 {
@@ -232,6 +245,44 @@ int stress_hash_map_lookup(struct pt_regs *ctx)
 		value = bpf_map_lookup_elem(&hash_map, &key);
 
 	return 0;
+}
+
+SEC("kprobe/sys_access")
+int stress_wcmap(struct pt_regs *ctx)
+{
+       struct wckey key;
+       long init_val = 1;
+       long *value;
+
+       key.ukey = bpf_get_current_pid_tgid();
+       key.mask = 0xff00ff00;
+
+       bpf_map_update_elem(&wc_map, &key, &init_val, BPF_ANY);
+       value = bpf_map_lookup_elem(&wc_map, &key);
+       if (value)
+	       bpf_map_delete_elem(&wc_map, &key);
+
+       return 0;
+}
+
+SEC("kprobe/sys_lseek")
+int stress_wc_map_lookup(struct pt_regs *ctx)
+{
+       struct wckey key;
+       long *value;
+       int i;
+
+       key.ukey = 0xffffffff;
+       key.mask = 0xffffffff;
+
+#pragma clang loop unroll(full)
+       for (i = 0; i < 64; ++i) {
+	       char fmt[] = "error\n";
+	       value = bpf_map_lookup_elem(&wc_map, &key);
+	       if (!value)
+		       bpf_trace_printk(fmt, sizeof(fmt));
+       }
+       return 0;
 }
 
 SEC("kprobe/sys_getpgrp")

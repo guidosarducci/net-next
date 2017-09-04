@@ -31,6 +31,7 @@ BPF_MAP_TYPE(BPF_MAP_TYPE_PERCPU_HASH, htab_percpu_map_ops)
 BPF_MAP_TYPE(BPF_MAP_TYPE_LRU_HASH, htab_lru_map_ops)
 BPF_MAP_TYPE(BPF_MAP_TYPE_LRU_PERCPU_HASH, htab_lru_percpu_map_ops)
 BPF_MAP_TYPE(BPF_MAP_TYPE_LPM_TRIE, trie_map_ops)
+BPF_MAP_TYPE(BPF_MAP_TYPE_WCMAP, wctab_map_ops)
 #ifdef CONFIG_PERF_EVENTS
 BPF_MAP_TYPE(BPF_MAP_TYPE_STACK_TRACE, stack_map_ops)
 #endif
