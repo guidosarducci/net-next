@@ -582,18 +582,6 @@ union bpf_attr {
  *	@map: pointer to sockmap to update
  *	@key: key to insert/update sock in map
  *	@flags: same flags as map update elem
- *
- * int bpf_skb_ct_lookup(skb, info, flags)
- *	@skb: pointer to skb
- *	@info: pointer to 'struct bpf_conntrack_info'
- *	@flags: reserved for future use
- *	Return: 0 on success or negative error
- *
- * int bpf_skb_ct_commit(skb, info, flags)
- *	@skb: pointer to skb
- *	@info: pointer to 'struct bpf_conntrack_info'
- *	@flags: reserved for future use
- *	Return: 0 on success or negative error
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -650,8 +638,6 @@ union bpf_attr {
 	FN(redirect_map),		\
 	FN(sk_redirect_map),		\
 	FN(sock_map_update),		\
-	FN(skb_ct_lookup),		\
-	FN(skb_ct_commit),		\
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
  * function eBPF program intends to call
@@ -749,23 +735,6 @@ struct bpf_tunnel_key {
 	__u8 tunnel_ttl;
 	__u16 tunnel_ext;
 	__u32 tunnel_label;
-};
-
-#define BPF_CT_LABELS_LEN 16
-#define BPF_F_CT_DEFRAG		(1ULL << 0)
-
-struct bpf_conntrack_info {
-	__u32 ct_state;
-	__u16 family;
-	__u16 zone_id;
-
-	/* for conntrack mark */
-	__u32 mark_value;
-	__u32 mark_mask;
-
-	/* for conntrack label */
-	__u8 ct_label_value[16];
-	__u8 ct_label_mask[16];
 };
 
 /* Generic BPF return codes which all BPF program types may support.
